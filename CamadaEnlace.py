@@ -1,102 +1,110 @@
+# ==========================
+# CamadaEnlace.py (REFATORADO)
+# ==========================
+
 from bitarray import bitarray
 
-# --- Constantes de Enlace ---
-FLAG_SEQUENCE = [0, 1, 1, 1, 1, 1, 1, 0]  # 0x7E
-ESCAPE_CHAR = [0, 0, 0, 1, 1, 0, 1, 1]   # 0x1B (ESC)
-CRC32_POLY = [1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1]
+# --- Constantes ---
+FLAG_SEQUENCE = [0,1,1,1,1,1,1,0]  # 0x7E
+ESCAPE_CHAR   = [0,0,0,1,1,0,1,1]  # 0x1B
+CRC32_POLY = [1,0,0,0,0,0,1,0,0,1,1,0,0,0,0,0,1,0,0,0,1,1,1,0,1,1,0,1,1,0,1,1,1]
 CRC32_DEGREE = 32
 
-# --- Camada de Aplicação (Auxiliar) ---
 
-def text_to_bit_list(text: str, encoding='utf-8', errors='surrogatepass') -> list[int]:
-    bin_array = bitarray()
-    bin_array.frombytes(text.encode(encoding, errors))
-    return [int(bit) for bit in bin_array]
+# ==========================
+#   Auxiliares Aplicação
+# ==========================
 
-# --- Camada de Enlace: Enquadramento (TX) ---
+def convert_to_bytes(text: str) -> list[int]:
+    arr = bitarray()
+    arr.frombytes(text.encode('utf-8','surrogatepass'))
+    return [int(b) for b in arr]
 
-def frame_char_count(bit_stream: list[int], header_bits=8) -> list[int]:
-    stream_length = len(bit_stream)
-    header_str = bin(stream_length)[2:].zfill(header_bits)
-    frame_header = [int(bit) for bit in header_str]
-    return frame_header + bit_stream
+# ==========================
+#     ENQUADRAMENTO (TX)
+# ==========================
 
-def frame_byte_stuffing(bit_stream: list[int]) -> list[int]:
-    stuffed_stream = []
-    
+def character_count(bit_stream: list[int], header_bits=8) -> list[int]:
+    length = len(bit_stream)
+    header = bin(length)[2:].zfill(header_bits)
+    return [int(b) for b in header] + bit_stream
+
+
+def byte_insertion(bit_stream: list[int]) -> list[int]:
+    stuffed = []
     for i in range(0, len(bit_stream), 8):
-        byte_chunk = bit_stream[i:i+8]
-        
-        if len(byte_chunk) < 8:
-            byte_chunk.extend([0] * (8 - len(byte_chunk)))
+        byte = bit_stream[i:i+8]
 
-        if byte_chunk == FLAG_SEQUENCE or byte_chunk == ESCAPE_CHAR:
-            stuffed_stream.extend(ESCAPE_CHAR)
-            stuffed_stream.extend(byte_chunk)
+        if len(byte) < 8:
+            byte += [0] * (8 - len(byte))
+
+        if byte == FLAG_SEQUENCE or byte == ESCAPE_CHAR:
+            stuffed += ESCAPE_CHAR + byte
         else:
-            stuffed_stream.extend(byte_chunk)
-            
-    return FLAG_SEQUENCE + stuffed_stream + FLAG_SEQUENCE
+            stuffed += byte
 
-def frame_bit_stuffing(bit_stream: list[int]) -> list[int]:
-    # (VERSÃO CORRIGIDA)
-    stuffed_stream = []
-    one_count = 0
-    
+    return FLAG_SEQUENCE + stuffed + FLAG_SEQUENCE
+
+
+def bit_insertion(bit_stream: list[int]) -> list[int]:
+    stuffed = []
+    ones = 0
+
     for bit in bit_stream:
-        stuffed_stream.append(bit)
-        
+        stuffed.append(bit)
+
         if bit == 1:
-            one_count += 1
-            if one_count == 5:
-                stuffed_stream.append(0)
-                one_count = 0
+            ones += 1
+            if ones == 5:
+                stuffed.append(0)
+                ones = 0
         else:
-            one_count = 0
-            
-    return FLAG_SEQUENCE + stuffed_stream + FLAG_SEQUENCE
+            ones = 0
 
-# --- Camada de Enlace: Detecção/Correção de Erros (TX) ---
+    return FLAG_SEQUENCE + stuffed + FLAG_SEQUENCE
 
-def apply_even_parity(bit_stream: list[int]) -> list[int]:
-    ones_count = sum(bit_stream)
-    parity_bit = ones_count % 2
-    return bit_stream + [parity_bit]
+
+# ==========================
+#   DETECÇÃO / CORREÇÃO (TX)
+# ==========================
+
+def bit_parity(bit_stream: list[int]) -> list[int]:
+    parity = sum(bit_stream) % 2
+    return bit_stream + [parity]
+
+# ---- CRC-32 ----
 
 def calculate_crc_remainder(data_with_padding: list[int]) -> list[int]:
-    temp_data = list(data_with_padding)
-    poly_len = len(CRC32_POLY)
+    temp = data_with_padding.copy()
+    for i in range(len(temp) - CRC32_DEGREE):
+        if temp[i] == 1:
+            for j in range(len(CRC32_POLY)):
+                temp[i+j] ^= CRC32_POLY[j]
+    return temp[-CRC32_DEGREE:]
 
-    for i in range(len(temp_data) - CRC32_DEGREE):
-        if temp_data[i] == 1:
-            for j in range(poly_len):
-                temp_data[i + j] = temp_data[i + j] ^ CRC32_POLY[j]
-    
-    remainder = temp_data[-CRC32_DEGREE:]
-    return remainder
 
-def create_crc_frame(original_data: list[int]) -> list[int]:
-    data_to_calculate = original_data + [0] * CRC32_DEGREE
-    crc_calculated = calculate_crc_remainder(data_to_calculate)
-    frame_to_send = original_data + crc_calculated
-    return frame_to_send
+def prepara_CRC_para_transmissao(bits: list[int]) -> list[int]:
+    padded = bits + [0] * CRC32_DEGREE
+    rem = calculate_crc_remainder(padded)
+    return bits + rem
 
-def encode_hamming_7_4(bit_stream: list[int]) -> list[int]:
-    encoded_stream = []
-    
+
+# ---- HAMMING (7,4) ----
+
+def hamming(bit_stream: list[int]) -> list[int]:
+    encoded = []
+
     for i in range(0, len(bit_stream), 4):
-        data_chunk = bit_stream[i:i+4]
-        
-        if len(data_chunk) < 4:
-            data_chunk.extend([0] * (4 - len(data_chunk)))
-        
-        m3, m5, m6, m7 = data_chunk[0], data_chunk[1], data_chunk[2], data_chunk[3]
-        
+        d = bit_stream[i:i+4]
+
+        if len(d) < 4:
+            d += [0] * (4 - len(d))
+
+        m3, m5, m6, m7 = d
         p1 = m3 ^ m5 ^ m7
         p2 = m3 ^ m6 ^ m7
         p4 = m5 ^ m6 ^ m7
-        
-        hamming_byte = [p1, p2, m3, p4, m5, m6, m7]
-        encoded_stream.extend(hamming_byte)
-            
-    return encoded_stream
+
+        encoded += [p1, p2, m3, p4, m5, m6, m7]
+
+    return encoded

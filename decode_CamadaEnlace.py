@@ -1,138 +1,117 @@
-# Importa o módulo do transmissor para reusar a função de CRC
-import CamadaEnlace as ce 
+import CamadaEnlace as ce
 from bitarray import bitarray
 
-# --- Constantes de Enlace (Receptor) ---
-FLAG_SEQUENCE = [0, 1, 1, 1, 1, 1, 1, 0]
-ESCAPE_CHAR = [0, 0, 0, 1, 1, 0, 1, 1]
+FLAG_SEQUENCE = [0,1,1,1,1,1,1,0]
+ESCAPE_CHAR   = [0,0,0,1,1,0,1,1]
 CRC32_DEGREE = 32
 
-# --- Camada de Aplicação (Auxiliares) ---
 
-def is_valid_utf8(byte_list):
+# ==========================
+# Auxiliares Aplicação
+# ==========================
+
+def is_valid_utf8(bts:bytes):
     try:
-        bytes(byte_list).decode('utf-8')
+        bts.decode('utf-8')
         return True
-    except UnicodeDecodeError:
+    except:
         return False
-
-def bit_list_to_text(bits: list[int], encoding="utf-8", errors="surrogatepass"):
-    array = bitarray(bits)
-    data_bytes = array.tobytes()
     
-    if is_valid_utf8(data_bytes):
-        text_output = data_bytes.decode(encoding, errors)
-    else:
-        text_output = "Sequência de bits impossível de decodificar"
-    return text_output
 
-# --- Camada de Enlace: Desenquadramento (RX) ---
+def bit_list_to_text(bits:list[int]):
+    arr = bitarray(bits)
+    data = arr.tobytes()
+    if is_valid_utf8(data):
+        return data.decode('utf-8','surrogatepass')
+    return "Sequência de bits impossível de decodificar"
 
-def rx_char_count_decode(bits: list[int], header_size=8):
-    # Remove o cabeçalho para obter o payload
+
+# ==========================
+# DESENQUADRAMENTO (RX)
+# ==========================
+
+def decode_charactere_count(bits:list[int], header_size=8):
     payload = bits[header_size:]
-    text_output = bit_list_to_text(payload)
-    return text_output
+    return bit_list_to_text(payload)
 
-def rx_byte_stuffing_decode(bits: list[int]):
-    # (VERSÃO CORRIGIDA)
-    unpacked_data = []
-    # Remove as flags de início e fim
+
+def decode_byte_insertion(bits:list[int]):
     payload = bits[8:len(bits)-8]
-
+    res = []
     i = 0
+
     while i < len(payload):
-        byte_chunk = payload[i:i+8]
-        
-        if byte_chunk == ESCAPE_CHAR:
-            # Pula o byte de 'escape' e adiciona o próximo byte
-            i += 8 
-            if i < len(payload):
-                unpacked_data.extend(payload[i:i+8])
+        byte = payload[i:i+8]
+
+        if byte == ESCAPE_CHAR:
+            i += 8
+            res += payload[i:i+8]
         else:
-            # Byte de dados normal
-            unpacked_data.extend(byte_chunk)
-        
+            res += byte
+
         i += 8
-        
-    text_output = bit_list_to_text(unpacked_data)
-    return text_output
 
-def rx_bit_stuffing_decode(bits: list[int]):
-    # (VERSÃO CORRIGIDA E ALTERADA)
-    unpacked_data = []
-    one_count = 0
-    payload = bits[8:len(bits)-8] # Remove flags
+    return bit_list_to_text(res)
 
-    for bit in payload:
-        if bit == 1:
-            unpacked_data.append(bit)
-            one_count += 1
-        else: # bit == 0
-            if one_count == 5:
-                # Se 5 '1's vieram antes, este '0' é stuffing
-                one_count = 0 # Ignora o bit
-            else:
-                unpacked_data.append(bit)
-                one_count = 0
-    
-    text_output = bit_list_to_text(unpacked_data)
-    return text_output
 
-# --- Camada de Enlace: Verificação de Erros (RX) ---
+def decode_bit_insertion(bits:list[int]):
+    payload = bits[8:len(bits)-8]
+    res = []
+    ones = 0
 
-def check_even_parity(bit_stream: list[int]):
-    # (VERSÃO CORRIGIDA)
-    status = "OK"
-    
-    # Para paridade PAR, a soma total (dados + paridade) deve ser PAR
-    if sum(bit_stream) % 2 != 0:
-        status = "Erro detectado - Bit de Paridade"
-    
-    data_only = bit_stream[:-1] # Remove o bit de paridade
-    return status, data_only
+    for b in payload:
+        if b == 1:
+            res.append(1)
+            ones += 1
+        else:  # b == 0
+            if ones == 5:
+                ones = 0
+                # este zero é descartado (stuffing)
+                continue
+            res.append(0)
+            ones = 0
 
-def check_crc(bit_stream: list[int]):
-    # Reutiliza a função de cálculo do encoder
-    # (Assumindo que o nome da função no seu "CamadaEnlace.py" é esta)
-    remainder = ce.calculate_crc_remainder(bit_stream) 
-    
-    data_only = bit_stream[:-CRC32_DEGREE]
-    
-    # Se não houver erro, o resto deve ser '000...0'
-    if not (all(bit == 0 for bit in remainder)):
-        status = "Erro detectado - CRC"
-        return status, data_only
-    else:
-        return "OK", data_only
+    return bit_list_to_text(res)
 
-def decode_and_correct_hamming(bit_stream: list[int]):
-    # (VERSÃO CORRIGIDA - Sem 'hardcoding' de tamanho)
-    unpacked_data = []
-    
-    # Processa o fluxo inteiro em blocos de 7 bits
-    for i in range(0, len(bit_stream), 7):
-        chunk = list(bit_stream[i:i+7])
-        
+
+# ==========================
+# VERIFICAÇÃO / CORREÇÃO (RX)
+# ==========================
+
+def verifica_bit_parity(bits:list[int]):
+    if sum(bits) % 2 != 0:
+        return "Erro detectado - Bit de Paridade", bits[:-1]
+    return "OK", bits[:-1]
+
+
+def verifica_crc(bits:list[int]):
+    rem = ce.calculate_crc_remainder(bits)
+    data = bits[:-CRC32_DEGREE]
+    if not all(b == 0 for b in rem):
+        return "Erro detectado - CRC", data
+    return "OK", data
+
+
+def corr_haming(framing_method: str, bits: list[int]):
+    out = []
+
+    for i in range(0, len(bits), 7):
+        chunk = bits[i:i+7]
         if len(chunk) < 7:
-            continue # Ignora pedaços no final
+            continue
 
-        p1, p2, m3, p4, m5, m6, m7 = chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6]
+        p1, p2, m3, p4, m5, m6, m7 = chunk
 
-        # Calcula a síndrome (posição do erro)
-        s1 = (p1 ^ m3 ^ m5 ^ m7)
-        s2 = (p2 ^ m3 ^ m6 ^ m7)
-        s3 = (p4 ^ m5 ^ m6 ^ m7)
-        
-        error_pos_str = f"{s3}{s2}{s1}"
-        error_index = int(error_pos_str, 2)
-        
-        if error_index != 0:
-            # Corrige o bit na posição do erro
-            bit_to_flip_idx = error_index - 1
-            chunk[bit_to_flip_idx] = 1 - chunk[bit_to_flip_idx]
-        
-        # Extrai os 4 bits de dados originais
-        unpacked_data.extend([chunk[2], chunk[4], chunk[5], chunk[6]])
+        s1 = p1 ^ m3 ^ m5 ^ m7
+        s2 = p2 ^ m3 ^ m6 ^ m7
+        s3 = p4 ^ m5 ^ m6 ^ m7
 
-    return unpacked_data
+        pos = int(f"{s3}{s2}{s1}", 2)
+
+        if pos != 0:
+            chunk[pos-1] ^= 1  # corrige
+
+        # dados SEMPRE são adicionados
+        out += [chunk[2], chunk[4], chunk[5], chunk[6]]
+
+    return out
