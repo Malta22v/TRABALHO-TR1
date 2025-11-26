@@ -88,22 +88,59 @@ def prepara_CRC_para_transmissao(bits: list[int]) -> list[int]:
     return bits + rem
 
 
-#HAMMING (7,4)
+#HAMMING
 
-def hamming(bit_stream: list[int]) -> list[int]:
+def hamming_dinamico(bit_stream: list[int]) -> list[int]:
     encoded = []
+    idx = 0
+    L = len(bit_stream)
 
-    for i in range(0, len(bit_stream), 4):
-        d = bit_stream[i:i+4]
+    while idx < L:
 
-        if len(d) < 4:
-            d += [0] * (4 - len(d))
+        # --- 1. descobrir o maior bloco possível ---
+        max_d = min(57, L - idx)  # limite para Hamming real (6 bits de paridade)
+        d = max_d
 
-        m3, m5, m6, m7 = d
-        p1 = m3 ^ m5 ^ m7
-        p2 = m3 ^ m6 ^ m7
-        p4 = m5 ^ m6 ^ m7
+        while d > 0:
+            p = 0
+            while (2 ** p) < (p + d + 1):
+                p += 1
+            if d + p <= 63:  # bloco máximo razoável
+                break
+            d -= 1
 
-        encoded += [p1, p2, m3, p4, m5, m6, m7]
+        # dados do bloco
+        data_bits = bit_stream[idx : idx + d]
+        idx += d
+
+        # --- 2. criar bloco com espaços para paridade ---
+        n = d + p
+        block = [None] * (n + 1)  # posição 1-indexed
+
+        # posições de paridade: 1,2,4,8,...
+        parity_positions = [2 ** i for i in range(p)]
+
+        # preencher dados
+        di = 0
+        for pos in range(1, n + 1):
+            if pos not in parity_positions:
+                if di < d:
+                    block[pos] = data_bits[di]
+                else:
+                    block[pos] = 0  # padding
+                di += 1
+
+        # --- 3. calcular bits de paridade ---
+        for pp in parity_positions:
+            xor_sum = 0
+            for pos in range(1, n + 1):
+                if pos & pp:  # se bit correspondente é 1
+                    val = block[pos]
+                    if val is not None:
+                        xor_sum ^= val
+            block[pp] = xor_sum
+
+        # remover índice 0
+        encoded.extend(block[1:])
 
     return encoded

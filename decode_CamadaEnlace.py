@@ -91,26 +91,53 @@ def verifica_crc(bits:list[int]):
     return "OK", data
 
 
-def corr_haming(framing_method: str, bits: list[int]):
+def corr_hamming_dinamico(bits: list[int]) -> list[int]:
     out = []
+    i = 0
+    L = len(bits)
 
-    for i in range(0, len(bits), 7):
-        chunk = bits[i:i+7]
-        if len(chunk) < 7:
-            continue
+    while i < L:
 
-        p1, p2, m3, p4, m5, m6, m7 = chunk
+        # --- 1. descobrir automaticamente o tamanho do bloco ---
+        # tentar blocos Hamming possíveis: 7,15,31,63
+        possible_sizes = [7, 15, 31, 63]
+        block_size = None
 
-        s1 = p1 ^ m3 ^ m5 ^ m7
-        s2 = p2 ^ m3 ^ m6 ^ m7
-        s3 = p4 ^ m5 ^ m6 ^ m7
+        for size in possible_sizes:
+            if i + size <= L:
+                block_size = size
+                break
 
-        pos = int(f"{s3}{s2}{s1}", 2)
+        if block_size is None:
+            break
 
-        if pos != 0:
-            chunk[pos-1] ^= 1  # corrige
+        chunk = bits[i:i+block_size]
+        i += block_size
 
-        # dados SEMPRE são adicionados
-        out += [chunk[2], chunk[4], chunk[5], chunk[6]]
+        n = block_size
+        p = 0
+        while (2 ** p) < (n + 1):
+            p += 1
+
+        parity_positions = [2 ** j for j in range(p) if 2**j <= n]
+
+        # --- 2. calcular síndrome ---
+        syndrome = 0
+        for pp in parity_positions:
+            xor_sum = 0
+            for pos in range(1, n + 1):
+                if pos & pp:
+                    xor_sum ^= chunk[pos - 1]
+            if xor_sum == 1:
+                syndrome += pp
+
+        # --- 3. corrigir ---
+        if syndrome != 0 and syndrome <= n:
+            chunk[syndrome - 1] ^= 1
+
+        # --- 4. extrair bits de dados ---
+        for pos in range(1, n + 1):
+            if pos not in parity_positions:
+                out.append(chunk[pos - 1])
 
     return out
