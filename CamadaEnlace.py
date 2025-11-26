@@ -1,28 +1,27 @@
-# ==========================
-# CamadaEnlace.py (REFATORADO)
-# ==========================
-
 from bitarray import bitarray
 
-# --- Constantes ---
+#Constantes
+
 FLAG_SEQUENCE = [0,1,1,1,1,1,1,0]  # 0x7E
 ESCAPE_CHAR   = [0,0,0,1,1,0,1,1]  # 0x1B
 CRC32_POLY = [1,0,0,0,0,0,1,0,0,1,1,0,0,0,0,0,1,0,0,0,1,1,1,0,1,1,0,1,1,0,1,1,1]
 CRC32_DEGREE = 32
 
 
-# ==========================
-#   Auxiliares Aplicação
-# ==========================
+
+
+# Auxiliares Aplicação
+
+
 
 def convert_to_bytes(text: str) -> list[int]:
     arr = bitarray()
     arr.frombytes(text.encode('utf-8','surrogatepass'))
     return [int(b) for b in arr]
 
-# ==========================
-#     ENQUADRAMENTO (TX)
-# ==========================
+
+#ENQUADRAMENTO (TX)
+
 
 def character_count(bit_stream: list[int], header_bits=8) -> list[int]:
     length = len(bit_stream)
@@ -64,15 +63,15 @@ def bit_insertion(bit_stream: list[int]) -> list[int]:
     return FLAG_SEQUENCE + stuffed + FLAG_SEQUENCE
 
 
-# ==========================
-#   DETECÇÃO / CORREÇÃO (TX)
-# ==========================
+
+#DETECÇÃO / CORREÇÃO (TX)
+
 
 def bit_parity(bit_stream: list[int]) -> list[int]:
     parity = sum(bit_stream) % 2
     return bit_stream + [parity]
 
-# ---- CRC-32 ----
+#CRC-32
 
 def calculate_crc_remainder(data_with_padding: list[int]) -> list[int]:
     temp = data_with_padding.copy()
@@ -89,7 +88,7 @@ def prepara_CRC_para_transmissao(bits: list[int]) -> list[int]:
     return bits + rem
 
 
-# ---- HAMMING (7,4) ----
+#HAMMING (7,4)
 
 def hamming(bit_stream: list[int]) -> list[int]:
     encoded = []

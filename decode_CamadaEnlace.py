@@ -6,9 +6,9 @@ ESCAPE_CHAR   = [0,0,0,1,1,0,1,1]
 CRC32_DEGREE = 32
 
 
-# ==========================
+
 # Auxiliares Aplicação
-# ==========================
+
 
 def is_valid_utf8(bts:bytes):
     try:
@@ -26,9 +26,9 @@ def bit_list_to_text(bits:list[int]):
     return "Sequência de bits impossível de decodificar"
 
 
-# ==========================
+
 # DESENQUADRAMENTO (RX)
-# ==========================
+
 
 def decode_charactere_count(bits:list[int], header_size=8):
     payload = bits[header_size:]
@@ -74,9 +74,8 @@ def decode_bit_insertion(bits:list[int]):
     return bit_list_to_text(res)
 
 
-# ==========================
-# VERIFICAÇÃO / CORREÇÃO (RX)
-# ==========================
+
+#VERIFICAÇÃO / CORREÇÃO (RX)
 
 def verifica_bit_parity(bits:list[int]):
     if sum(bits) % 2 != 0:
