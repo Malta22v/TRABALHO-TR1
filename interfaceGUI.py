@@ -166,7 +166,7 @@ class MainWindow(Gtk.Window):
         self.params_grid.attach(self.noise_spin, 1, 5, 1, 1)
 
         # CHECKBOX DEMODULAÇÃO / DECODIFICAÇÃO
-        self.show_decoding_check = Gtk.CheckButton(label="Relatório dos erros")
+        self.show_decoding_check = Gtk.CheckButton(label="Ativação dos erros")
         # Ruído com distribuição gaussiana (normal) aleatória
         self.show_decoding_check.set_active(True)
         self.params_grid.attach(self.show_decoding_check, 1, 6, 2, 1)
