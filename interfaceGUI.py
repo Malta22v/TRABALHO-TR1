@@ -315,14 +315,60 @@ class MainWindow(Gtk.Window):
         # PASSO 8: DESENQUADRAMENTO E OBTENÇÃO DO TEXTO DECODIFICADO
         decoded_text = ""
         try:
-            if framing_method == "Contagem de caracteres":
+            # 1) funções de desenquadramento específicas (se existirem)
+            if framing_method == "Contagem de caracteres" and hasattr(d_enlace, 'decode_charactere_count'):
                 decoded_text = d_enlace.decode_charactere_count(corrected)
-            elif framing_method == "FLAG + Inserção de bytes":
+            elif framing_method == "FLAG + Inserção de bytes" and hasattr(d_enlace, 'decode_byte_insertion'):
                 decoded_text = d_enlace.decode_byte_insertion(corrected)
-            elif framing_method == "FLAG + Inserção de bits":
+            elif framing_method == "FLAG + Inserção de bits" and hasattr(d_enlace, 'decode_bit_insertion'):
                 decoded_text = d_enlace.decode_bit_insertion(corrected)
+            else:
+                # 2) tenta funções genéricas do módulo enlace (nomes comuns)
+                tried = False
+                for fn_name in ('convert_from_bytes', 'bytes_to_string', 'convert_bytes_to_message', 'bits_to_bytes'):
+                    if hasattr(enlace, fn_name):
+                        try:
+                            result = getattr(enlace, fn_name)(corrected)
+                            # se a função retornar bytes, transforma em string
+                            if isinstance(result, (bytes, bytearray)):
+                                decoded_text = result.decode('utf-8', errors='replace')
+                            else:
+                                decoded_text = str(result)
+                            tried = True
+                            break
+                        except Exception:
+                            # continua para o próximo nome possível
+                            pass
+
+                # 3) fallback manual: trata corrected como bitarray / bytes / lista de bits
+                if not tried:
+                    try:
+                        from bitarray import bitarray as _bitarray
+                        if isinstance(corrected, _bitarray):
+                            b = corrected.tobytes()
+                            decoded_text = b.decode('utf-8', errors='replace')
+                        elif isinstance(corrected, (bytes, bytearray)):
+                            decoded_text = bytes(corrected).decode('utf-8', errors='replace')
+                        elif isinstance(corrected, (list, tuple)):
+                            # agrupa bits em octetos (descarta o último octeto incompleto)
+                            bits = ''.join('1' if int(x) else '0' for x in corrected)
+                            octets = [bits[i:i+8] for i in range(0, len(bits), 8)]
+                            byts = bytes(int(o, 2) for o in octets if len(o) == 8)
+                            decoded_text = byts.decode('utf-8', errors='replace')
+                        else:
+                            # última tentativa genérica
+                            decoded_text = str(corrected)
+                    except Exception as e:
+                        GObject.idle_add(self.log, f"Erro no desenquadramento/manual decode: {e}")
+
         except Exception as e:
             GObject.idle_add(self.log, f"Erro no desenquadramento: {e}")
+
+        # Se ainda estiver vazio, mostra um aviso (mas mostra sempre alguma coisa)
+        if isinstance(decoded_text, (bytes, bytearray)):
+            decoded_text = decoded_text.decode('utf-8', errors='replace')
+        if not decoded_text:
+            decoded_text = "<(não foi possível decodificar o texto)>"
 
         GObject.idle_add(self.log, f"Mensagem decodificada: {decoded_text}")
 
