@@ -271,29 +271,59 @@ class MainWindow(Gtk.Window):
 
         GObject.idle_add(self.log, f"Sequência enviada ao meio (len = {len(processed)}): {processed}")
 
-        # PASSO 6: TRANSMISSÃO LOCAL VIA SOCKET
-        # Verifica se transmissor e receptor existem. Senão existirem, código copia os bits
-        if tm is None or rc is None:
-            GObject.idle_add(self.log, "Aviso: transmissor/Receptor locais não encontrados. O fluxo continuará localmente sem sockets.")
-            received_bits = processed.copy()
-        else:
-            # Inicia receptor em thread
-            receiver = rc.Receiver()
-            receiver_thread = threading.Thread(target=receiver.TCPServer, daemon=True)
-            receiver_thread.start()
-            time.sleep(0.3)
-
-            ok = tm.startServer(processed)
-            if not ok:
-                GObject.idle_add(self.log, "Erro ao transmitir via socket")
-                return
-
-            # Aguarda chegada dos dados
-            receiver.data_ready.wait(timeout=5)
-            received_bits = receiver.sent_data if getattr(receiver, 'sent_data', None) is not None else processed
-            GObject.idle_add(self.log, f"Sequência recebida (len = {len(received_bits)}): {received_bits}")
-            if hasattr(receiver, 'changed_bit_position'):
-                GObject.idle_add(self.log, f"Posição do bit alterado (se houver): {receiver.changed_bit_position}")
+        # PASSO 6: SIMULAÇÃO DA CAMADA FÍSICA (MODULAÇÃO + RUÍDO + DEMODULAÇÃO)
+        # Aqui simulamos o canal de comunicação
+        received_bits = processed.copy()  # Por padrão, assume transmissão perfeita
+        
+        # Se checkbox de demodulação está ativo, simula o canal físico completo
+        if do_decode and d_fisica is not None:
+            try:
+                # Modula o sinal analógico
+                analog_signal = None
+                if analog_mod == "ASK" and hasattr(fisica, 'ask_modulate'):
+                    analog_signal = fisica.ask_modulate(processed)
+                elif analog_mod == "FSK" and hasattr(fisica, 'fsk_modulate'):
+                    analog_signal = fisica.fsk_modulate(processed)
+                elif analog_mod == "PSK (QPSK)" and hasattr(fisica, 'psk_modulate'):
+                    analog_signal = fisica.psk_modulate(processed)
+                elif analog_mod == "16-QAM" and hasattr(fisica, 'qam_16'):
+                    analog_signal = fisica.qam_16(processed)
+                
+                if analog_signal is not None:
+                    GObject.idle_add(self.log, f"\n--- SIMULAÇÃO DO CANAL FÍSICO ---")
+                    GObject.idle_add(self.log, f"Sinal modulado ({analog_mod}): {len(analog_signal)} amostras")
+                    
+                    # Adiciona ruído ao sinal
+                    if sigma > 0 and hasattr(fisica, 'add_ruido'):
+                        analog_signal = fisica.add_ruido(analog_signal, sigma)
+                        GObject.idle_add(self.log, f"Ruído AWGN adicionado (sigma={sigma})")
+                    
+                    # Demodula o sinal com ruído
+                    bits_demodulados = None
+                    if analog_mod == "ASK" and hasattr(d_fisica, 'decode_ask_modulate'):
+                        bits_demodulados = d_fisica.decode_ask_modulate(analog_signal)
+                        GObject.idle_add(self.log, f"Bits demodulados (ASK): {bits_demodulados}")
+                    elif analog_mod == "FSK" and hasattr(d_fisica, 'decode_fsk_modulate'):
+                        bits_demodulados = d_fisica.decode_fsk_modulate(analog_signal)
+                        GObject.idle_add(self.log, f"Bits demodulados (FSK): {bits_demodulados}")
+                    elif analog_mod == "PSK (QPSK)" and hasattr(d_fisica, 'demodulate_psk_modulate'):
+                        bits_demodulados = d_fisica.demodulate_psk_modulate(analog_signal)
+                        GObject.idle_add(self.log, f"Bits demodulados (PSK/QPSK): {bits_demodulados}")
+                    elif analog_mod == "16-QAM" and hasattr(d_fisica, 'demodulate_qam_16'):
+                        bits_demodulados = d_fisica.demodulate_qam_16(analog_signal)
+                        GObject.idle_add(self.log, f"Bits demodulados (16-QAM): {bits_demodulados}")
+                    
+                    # USA OS BITS DEMODULADOS como received_bits
+                    if bits_demodulados is not None:
+                        received_bits = bits_demodulados
+                        GObject.idle_add(self.log, f"*** USANDO BITS DEMODULADOS PARA RECONSTRUÇÃO ***")
+                    
+            except Exception as e:
+                GObject.idle_add(self.log, f"Erro na simulação do canal físico: {e}")
+                import traceback
+                GObject.idle_add(self.log, traceback.format_exc())
+        
+        GObject.idle_add(self.log, f"Sequência recebida (len = {len(received_bits)}): {received_bits}")
 
         # PASSO 7: VERIFICAÇÃO E CORREÇÃO DE ERROS NO RECEPTOR
         error_report = "Não verificado"
@@ -315,6 +345,11 @@ class MainWindow(Gtk.Window):
         # PASSO 8: DESENQUADRAMENTO E OBTENÇÃO DO TEXTO DECODIFICADO
         decoded_text = ""
         try:
+            # Converte corrected para lista Python se for numpy array
+            import numpy as np
+            if isinstance(corrected, np.ndarray):
+                corrected = corrected.tolist()
+            
             # 1) funções de desenquadramento específicas (se existirem)
             if framing_method == "Contagem de caracteres" and hasattr(d_enlace, 'decode_charactere_count'):
                 decoded_text = d_enlace.decode_charactere_count(corrected)
@@ -322,6 +357,15 @@ class MainWindow(Gtk.Window):
                 decoded_text = d_enlace.decode_byte_insertion(corrected)
             elif framing_method == "FLAG + Inserção de bits" and hasattr(d_enlace, 'decode_bit_insertion'):
                 decoded_text = d_enlace.decode_bit_insertion(corrected)
+            elif framing_method == "Nenhum":
+                # Sem enquadramento, converte bits diretamente para texto
+                if hasattr(d_enlace, 'bit_list_to_text'):
+                    decoded_text = d_enlace.bit_list_to_text(corrected)
+                else:
+                    # Fallback: converte manualmente
+                    from bitarray import bitarray as _bitarray
+                    arr = _bitarray(corrected)
+                    decoded_text = arr.tobytes().decode('utf-8', errors='replace')
             else:
                 # 2) tenta funções genéricas do módulo enlace (nomes comuns)
                 tried = False
@@ -372,84 +416,47 @@ class MainWindow(Gtk.Window):
 
         GObject.idle_add(self.log, f"Mensagem decodificada: {decoded_text}")
 
-        # PASSO 9: GERA E PLOTA SINAIS DIGITAIS
+        # PASSO 9: GERA GRÁFICOS DOS SINAIS (apenas para visualização)
         try:
+            # Gráfico do sinal digital
             signal = None
             if digital_mod == "NRZ-Polar":
                 if hasattr(fisica, 'code_nrz_polar'):
                     signal = fisica.code_nrz_polar(processed)
-                elif hasattr(fisica, 'nrz_modulation'):
-                    signal = fisica.nrz_modulation(processed)
-
             elif digital_mod == "Manchester":
                 if hasattr(fisica, 'code_manchester'):
                     signal = fisica.code_manchester(processed)
-                elif hasattr(fisica, 'manchester_modulation'):
-                    signal = fisica.manchester_modulation(processed)
-
             elif digital_mod == "Bipolar":
                 if hasattr(fisica, 'code_bipolar'):
                     signal = fisica.code_bipolar(processed)
-                elif hasattr(fisica, 'bipolar_modulation'):
-                    signal = fisica.bipolar_modulation(processed)
 
             if signal is not None:
-                # Adiciona gráfico do sinal digital
                 GObject.idle_add(self.plot_digital_signal, signal, digital_mod)
 
-                # Aplicação de ruído e demodulação (se necessário)
-                if do_decode and sigma > 0 and d_fisica is not None:
-                    noisy = fisica.add_ruido(signal, sigma)
-                    # tentar demodular com as funções de decode_Camadafisica
-                    if digital_mod == "NRZ-Polar" and hasattr(d_fisica, 'decode_nrz_polar'):
-                        bits_rx = d_fisica.decode_nrz_polar(noisy)
-                        GObject.idle_add(self.log, f"Bits demodulados (NRZ): {bits_rx}")
-                    elif digital_mod == "Manchester" and hasattr(d_fisica, 'decode_manchester'):
-                        bits_rx = d_fisica.decode_manchester(noisy)
-                        GObject.idle_add(self.log, f"Bits demodulados (Manchester): {bits_rx}")
-                    elif digital_mod == "Bipolar" and hasattr(d_fisica, 'decode_bipolar'):
-                        bits_rx = d_fisica.decode_bipolar(noisy)
-                        GObject.idle_add(self.log, f"Bits demodulados (Bipolar): {bits_rx}")
-
         except Exception as e:
-            GObject.idle_add(self.log, f"Erro ao gerar/plotar sinal digital: {e}")
+            GObject.idle_add(self.log, f"Erro ao gerar gráfico digital: {e}")
 
-        # PASSO 10: GERA E PLOTA SINAIS ANALÓGICOS
+        # PASSO 10: GERA GRÁFICO DO SINAL ANALÓGICO (para visualização)
         try:
-            analog_signal = None
+            analog_signal_plot = None
             if analog_mod == "ASK" and hasattr(fisica, 'ask_modulate'):
-                analog_signal = fisica.ask_modulate(processed)
+                analog_signal_plot = fisica.ask_modulate(processed)
             elif analog_mod == "FSK" and hasattr(fisica, 'fsk_modulate'):
-                analog_signal = fisica.fsk_modulate(processed)
+                analog_signal_plot = fisica.fsk_modulate(processed)
             elif analog_mod == "PSK (QPSK)" and hasattr(fisica, 'psk_modulate'):
-                analog_signal = fisica.psk_modulate(processed)
+                analog_signal_plot = fisica.psk_modulate(processed)
             elif analog_mod == "16-QAM" and hasattr(fisica, 'qam_16'):
-                analog_signal = fisica.qam_16(processed)
+                analog_signal_plot = fisica.qam_16(processed)
 
-            if analog_signal is not None:
-                # Adiciona ruído (se necessário)
+            if analog_signal_plot is not None:
+                # Adiciona ruído para visualização
                 if sigma > 0 and hasattr(fisica, 'add_ruido'):
-                    analog_signal = fisica.add_ruido(analog_signal, sigma)
+                    analog_signal_plot = fisica.add_ruido(analog_signal_plot, sigma)
 
-                GObject.idle_add(self.plot_analog_signal, analog_signal, analog_mod)
-
-                # Demodulação (se necessária)
-                if do_decode and d_fisica is not None:
-                    if analog_mod == "ASK" and hasattr(d_fisica, 'decode_ask_modulate'):
-                        bits_rx = d_fisica.decode_ask_modulate(analog_signal)
-                        GObject.idle_add(self.log, f"Bits demodulados (ASK): {bits_rx}")
-                    if analog_mod == "FSK" and hasattr(d_fisica, 'decode_fsk_modulate'):
-                        bits_rx = d_fisica.decode_fsk_modulate(analog_signal)
-                        GObject.idle_add(self.log, f"Bits demodulados (FSK): {bits_rx}")
-                    if analog_mod == "PSK (QPSK)" and hasattr(d_fisica, 'demodulate_psk_modulate'):
-                        bits_rx = d_fisica.demodulate_psk_modulate(analog_signal)
-                        GObject.idle_add(self.log, f"Bits demodulados (PSK/QPSK): {bits_rx}")
-                    if analog_mod == "16-QAM" and hasattr(d_fisica, 'demodulate_qam_16'):
-                        bits_rx = d_fisica.demodulate_qam_16(analog_signal)
-                        GObject.idle_add(self.log, f"Bits demodulados (16-QAM): {bits_rx}")
+                GObject.idle_add(self.plot_analog_signal, analog_signal_plot, analog_mod)
 
         except Exception as e:
-            GObject.idle_add(self.log, f"Erro ao gerar/plotar sinal analógico: {e}")
+            GObject.idle_add(self.log, f"Erro ao gerar gráfico analógico: {e}")
 
         GObject.idle_add(self.log, "\n\nSimulação concluída com sucesso.")
 

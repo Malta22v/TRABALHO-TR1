@@ -11,7 +11,7 @@ V_ZERO = 0.0
 NORM_QAM = np.sqrt(10) 
 BIT_RATE = 1000 
 TEMPO_BIT = 1/BIT_RATE
-FREEQUENCIA_PORTADORA = 10000 
+FREEQUENCIA_PORTADORA = 5000  # CORRIGIDO: deve ser igual ao da modulação
 TAXA_DE_AMOSTRAGEM = 10 * FREEQUENCIA_PORTADORA 
 AMOSTRAS_POR_BIT = int(TAXA_DE_AMOSTRAGEM / BIT_RATE)
 
@@ -108,7 +108,7 @@ def decode_ask_modulate(sinal_com_ruido):
 def decode_fsk_modulate(sinal_com_ruido):
     bits = []
     amostras_por_simbolo = AMOSTRAS_POR_BIT
-    frequencia_desvio = 5000
+    frequencia_desvio = 2000  # CORRIGIDO: deve ser igual ao da modulação
     t = np.linspace(0, TEMPO_BIT, AMOSTRAS_POR_BIT)
     
     template_0 = 1.0 * np.sin(2*np.pi*(FREEQUENCIA_PORTADORA + frequencia_desvio) * t)
@@ -123,9 +123,9 @@ def decode_fsk_modulate(sinal_com_ruido):
         correlacao_1 = np.sum(chunk * template_1)
         
         if correlacao_0 > correlacao_1:
-            bits.append(0)
-        else:
             bits.append(1)
+        else:
+            bits.append(0)
     return np.array(bits)
 
 def demodulate_psk_modulate(sinal_com_ruido):
