@@ -31,6 +31,10 @@ O simulador cobre as seguintes etapas de processamento de dados e sinais:
 * **Simulação de Canal:** Adição de ruído branco gaussiano (AWGN) ao sinal transmitido.
 * **Interface Gráfica (GUI):** Configuração dos parâmetros de simulação e visualização gráfica dos sinais (transmitido vs. recebido) e constelações.
 
+### 4. Como rodar o código
+* Após ter todos os arquivos necessários baixados, utilize, no terminal, o comando:
+    - python3 ./interfaceGUI.py
+
 ## Pré-requisitos
 
 * **Linguagem:** Python 3
