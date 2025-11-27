@@ -68,32 +68,48 @@ def code_bipolar(bits):
 
 BIT_RATE = 1000 
 TEMPO_BIT = 1/BIT_RATE
-FREEQUENCIA_PORTADORA = 10000 
+FREEQUENCIA_PORTADORA = 5000  #era 10.000
 TAXA_DE_AMOSTRAGEM = 10 * FREEQUENCIA_PORTADORA 
 AMOSTRAS_POR_BIT = int(TAXA_DE_AMOSTRAGEM / BIT_RATE)
 
 def ask_modulate(bits):
     sinal = []
-    t = np.linspace(0, TEMPO_BIT, AMOSTRAS_POR_BIT)
-    for i in bits:
-        if i == 0:
-            sinal_bit = np.zeros(AMOSTRAS_POR_BIT) 
-        else:
-            sinal_bit = 1.0 * np.sin(2*np.pi*FREEQUENCIA_PORTADORA*t)
-        sinal.extend(sinal_bit)
+
+    dt = 1 / TAXA_DE_AMOSTRAGEM
+    fase = 0.0  # fase acumulada da portadora
+
+    for b in bits:
+        for _ in range(AMOSTRAS_POR_BIT):
+
+            # avança a fase da portadora
+            fase += 2 * np.pi * FREEQUENCIA_PORTADORA * dt
+
+            if b == 1:
+                sinal.append(np.sin(fase))   # bit '1' = portadora
+            else:
+                sinal.append(0.0)            # bit '0' = ausência de portadora
+
     return np.array(sinal)
 
 def fsk_modulate(bits):
     sinal = []
-    frequencia_desvio = 5000
-    t = np.linspace(0, TEMPO_BIT, AMOSTRAS_POR_BIT)
-    
-    for i in bits:
-        if i == 1:
-            sinal_bit = 1.0 * np.sin(2*np.pi*(FREEQUENCIA_PORTADORA + frequencia_desvio) * t)    
+    frequencia_desvio = 2000 #era 5.000
+
+    dt = 1 / TAXA_DE_AMOSTRAGEM
+    fase = 0.0  # fase acumulada
+
+    for b in bits:
+        # Escolhe frequência do símbolo
+        if b == 1:   #era b == 0
+            f = FREEQUENCIA_PORTADORA + frequencia_desvio
         else:
-            sinal_bit = 1.0 * np.sin(2*np.pi*(FREEQUENCIA_PORTADORA - frequencia_desvio) * t)
-        sinal.extend(sinal_bit)
+            f = FREEQUENCIA_PORTADORA - frequencia_desvio
+
+        # Gera AMOSTRAS_PORBIT amostras contínuas
+        for _ in range(AMOSTRAS_POR_BIT):
+            fase += 2 * np.pi * f * dt
+            sinal.append(np.sin(fase))
+
     return np.array(sinal)
 
 def psk_modulate(bits):
