@@ -29,7 +29,7 @@ def convert_to_bytes(text: str) -> list[int]:
 
 
 
-# ENQUADRAMENTO (TX)
+# ENQUADRAMENTO (TX)   
 
 def character_count(bit_stream: list[int], header_bits=8) -> list[int]:
     """
