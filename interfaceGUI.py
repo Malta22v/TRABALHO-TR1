@@ -334,7 +334,7 @@ class MainWindow(Gtk.Window):
             elif error_method == "CRC-32":
                 error_report, corrected = d_enlace.verifica_crc(received_bits)
             elif error_method == "Hamming":
-                corrected = d_enlace.corr_hamming_dinamico(framing_method, received_bits)
+                corrected = d_enlace.corr_hamming_dinamico(received_bits)
                 error_report = "Hamming aplicado"
         except Exception as e:
             GObject.idle_add(self.log, f"Erro na verificação de erros: {e}")

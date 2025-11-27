@@ -117,6 +117,10 @@ def psk_modulate(bits):
     tempo_simbolo = 2 * TEMPO_BIT
     t = np.linspace(0, tempo_simbolo, 2 * AMOSTRAS_POR_BIT)
     fases = {'00': 0 , '01': 90 , '11': 180 , '10': 270}
+    
+    # Adiciona padding se o número de bits for ímpar
+    if len(bits) % 2 != 0:
+        bits = list(bits) + [0]
 
     for i in range(0, len(bits), 2):
         bit1 = str(bits[i])
@@ -149,6 +153,10 @@ def qam_16(bits):
     '1100': ( 1, -3), '1101': ( 1, -1), '1111': ( 1,  1), '1110': ( 1,  3),
     '1000': ( 3, -3), '1001': ( 3, -1), '1011': ( 3,  1), '1010': ( 3,  3),
     }
+    
+    # Adiciona padding se não for múltiplo de 4
+    if len(bits) % 4 != 0:
+        bits = list(bits) + [0] * (4 - len(bits) % 4)
 
     for i in range(0, len(bits), 4):
         bit_concat = "".join(map(str, bits[i:i+4]))

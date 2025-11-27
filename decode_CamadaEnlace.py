@@ -137,42 +137,47 @@ def verifica_crc(bits: list[int]):
 
 def corr_hamming_dinamico(bits: list[int]) -> list[int]:
     """
-    Realiza a correção do Hamming generalizado.
-    Aqui o código tenta identificar blocos válidos (7,15,31,63),
-    recalcula a síndrome e corrige um único erro, se existir.
-
-    Depois disso, extrai apenas os bits de dados (todas as posições
-    que não são potências de 2).
+    Decodifica e corrige blocos Hamming.
+    Usa blocos de tamanho padrão: 7, 15, 31, 63
     """
     out = []
     i = 0
     L = len(bits)
 
+    # Configurações Hamming: (tamanho_total, bits_paridade)
+    hamming_configs = [
+        (63, 6),
+        (31, 5),
+        (15, 4),
+        (7, 3),
+    ]
+
     while i < L:
-
-        # 1. tenta identificar qual é o bloco Hamming válido
-        possible_sizes = [7, 15, 31, 63]
-        block_size = None
-
-        for size in possible_sizes:
-            if i + size <= L:
-                block_size = size
+        # Identifica qual bloco usar baseado nos bits restantes
+        bits_restantes = L - i
+        n, p = None, None
+        
+        for config in hamming_configs:
+            if config[0] <= bits_restantes:
+                n, p = config
                 break
-
-        if block_size is None:
+        
+        # Se não couber nenhum bloco padrão, tenta o menor
+        if n is None:
+            if bits_restantes >= 7:
+                n, p = 7, 3
+            else:
+                # Não há bits suficientes para um bloco válido
+                break
+        
+        # Extrai o bloco
+        chunk = bits[i:i+n]
+        if len(chunk) < n:
             break
+        i += n
 
-        chunk = bits[i:i+block_size]
-        i += block_size
-
-        # calcula quantos bits de paridade existem
-        n = block_size
-        p = 0
-        while (2 ** p) < (n + 1):
-            p += 1
-
-        # posições dos bits de paridade (1,2,4,8...)
-        parity_positions = [2 ** j for j in range(p) if 2**j <= n]
+        # Posições de paridade: 1, 2, 4, 8, 16, 32
+        parity_positions = [2 ** j for j in range(p)]
 
         # 2. calcular síndrome
         syndrome = 0

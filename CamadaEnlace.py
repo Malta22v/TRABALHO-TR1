@@ -10,11 +10,7 @@ ESCAPE_CHAR   = [0,0,0,1,1,0,1,1]  # 0x1B
 CRC32_POLY = [1,0,0,0,0,0,1,0,0,1,1,0,0,0,0,0,1,0,0,0,1,1,1,0,1,1,0,1,1,0,1,1,1]
 CRC32_DEGREE = 32
 
-
-
-
 # Auxiliar: converte texto para sequência de bits
-
 
 def convert_to_bytes(text: str) -> list[int]:
     """
@@ -25,9 +21,6 @@ def convert_to_bytes(text: str) -> list[int]:
     arr = bitarray()
     arr.frombytes(text.encode('utf-8','surrogatepass'))
     return [int(b) for b in arr]
-
-
-
 
 # ENQUADRAMENTO (TX)   
 
@@ -89,9 +82,6 @@ def bit_insertion(bit_stream: list[int]) -> list[int]:
 
     return FLAG_SEQUENCE + stuffed + FLAG_SEQUENCE
 
-
-
-
 # DETECÇÃO / CORREÇÃO (TX)
 
 def bit_parity(bit_stream: list[int]) -> list[int]:
@@ -101,8 +91,6 @@ def bit_parity(bit_stream: list[int]) -> list[int]:
     """
     parity = sum(bit_stream) % 2
     return bit_stream + [parity]
-
-
 
 
 # CRC-32
@@ -139,71 +127,66 @@ def prepara_CRC_para_transmissao(bits: list[int]) -> list[int]:
 
 def hamming_dinamico(bit_stream: list[int]) -> list[int]:
     """
-    Implementação de um Hamming generalizado.
-    Ele ajusta o tamanho do bloco dinamicamente conforme o tamanho
-    dos dados, calculando quantos bits de paridade são necessários.
-
-    A ideia é formar blocos onde:
-    - certas posições (1,2,4,8...) são reservadas para bits de paridade
-    - as demais recebem os dados
-    - cada bit de paridade cobre posições específicas usando XOR
-
-    Esse método permite trabalhar com blocos maiores que o tradicional 7,4.
+    Implementação de Hamming com blocos de tamanho fixo.
+    Usa blocos de tamanho padrão: Hamming(7,4), (15,11), (31,26), (63,57)
+    Formato: (n, k) onde n = tamanho total, k = bits de dados
     """
     encoded = []
     idx = 0
     L = len(bit_stream)
 
+    # Configurações padrão: (tamanho_bloco, bits_dados, bits_paridade)
+    hamming_configs = [
+        (63, 57, 6),  # Hamming(63,57) - 6 bits de paridade
+        (31, 26, 5),  # Hamming(31,26) - 5 bits de paridade  
+        (15, 11, 4),  # Hamming(15,11) - 4 bits de paridade
+        (7, 4, 3),    # Hamming(7,4) - 3 bits de paridade
+    ]
+
     while idx < L:
-
-        # 1. Escolhe o maior bloco de dados possível
-        max_d = min(57, L - idx)  # limite prático para manter bloco <= 63 bits
-        d = max_d
-
-        # calcula número mínimo de bits de paridade necessários
-        while d > 0:
-            p = 0
-            while (2 ** p) < (p + d + 1):
-                p += 1
-
-            # garante que bloco final não passe de ~63 bits
-            if d + p <= 63:
+        # Escolhe o maior bloco que cabe nos bits restantes
+        bits_restantes = L - idx
+        n, k, p = None, None, None
+        
+        for config in hamming_configs:
+            if config[1] <= bits_restantes:
+                n, k, p = config
                 break
-
-            d -= 1
-
-        # extrai bloco de dados
-        data_bits = bit_stream[idx : idx + d]
-        idx += d
-
-        # 2. cria um bloco com espaço para dados + bits de paridade
-        n = d + p
-        block = [None] * (n + 1)  # usa índice começando em 1
-
-        # posições de paridade (1,2,4,8,...)
+        
+        # Se nenhum bloco padrão cabe, usa o menor
+        if n is None:
+            n, k, p = 7, 4, 3
+        
+        # Extrai k bits de dados (com padding se necessário)
+        data_bits = bit_stream[idx : idx + k]
+        if len(data_bits) < k:
+            data_bits = data_bits + [0] * (k - len(data_bits))
+        idx += len(bit_stream[idx : idx + k])  # avança apenas pelos bits reais
+        
+        # Cria bloco Hamming indexado a partir de 1
+        block = [None] * (n + 1)
+        
+        # Posições de paridade: 1, 2, 4, 8, 16, 32
         parity_positions = [2 ** i for i in range(p)]
-
-        # preenche os dados nas posições que não são de paridade
-        di = 0
+        
+        # Preenche bits de dados nas posições não-paridade
+        data_idx = 0
         for pos in range(1, n + 1):
             if pos not in parity_positions:
-                if di < d:
-                    block[pos] = data_bits[di]
-                else:
-                    block[pos] = 0  # padding se faltar dado
-                di += 1
-
-        # 3. calcula os bits de paridade
-        for pp in parity_positions:
+                block[pos] = data_bits[data_idx] if data_idx < len(data_bits) else 0
+                data_idx += 1
+        
+        # Calcula bits de paridade
+        for parity_pos in parity_positions:
             xor_sum = 0
             for pos in range(1, n + 1):
-                if pos & pp:
-                    val = block[pos]
-                    if val is not None:
-                        xor_sum ^= val
-            block[pp] = xor_sum
-
-        # remove índice 0 e adiciona ao fluxo final
+                # Se a posição tem o bit de paridade ativo
+                if pos & parity_pos:
+                    if block[pos] is not None:
+                        xor_sum ^= block[pos]
+            block[parity_pos] = xor_sum
+        
+        # Adiciona bloco ao resultado (ignorando índice 0)
         encoded.extend(block[1:])
 
     return encoded
