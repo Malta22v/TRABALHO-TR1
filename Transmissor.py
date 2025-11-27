@@ -2,7 +2,7 @@ import time
 from bitarray import bitarray
 import socket
 
-def startServer(message, host='127.0.0.1', port=12345, max_retries=3):
+def startServer(message, host='127.0.0.1', port=12345, maximo_de_tentativas=3):
     """
     Envia uma sequência de bits para um servidor TCP.
     Realiza múltiplas tentativas caso o servidor não esteja disponível.
