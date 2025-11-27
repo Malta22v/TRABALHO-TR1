@@ -264,7 +264,7 @@ class MainWindow(Gtk.Window):
             elif error_method == "CRC-32":
                 processed = enlace.prepara_CRC_para_transmissao(framed)
             elif error_method == "Hamming":
-                processed = enlace.hamming(framed)
+                processed = enlace.hamming_dinamico(framed)
         except Exception as e:
             GObject.idle_add(self.log, f"Erro na codificação de erro: {e}")
             return
@@ -304,7 +304,7 @@ class MainWindow(Gtk.Window):
             elif error_method == "CRC-32":
                 error_report, corrected = d_enlace.verifica_crc(received_bits)
             elif error_method == "Hamming":
-                corrected = d_enlace.corr_haming(framing_method, received_bits)
+                corrected = d_enlace.corr_hamming_dinamico(framing_method, received_bits)
                 error_report = "Hamming aplicado"
         except Exception as e:
             GObject.idle_add(self.log, f"Erro na verificação de erros: {e}")

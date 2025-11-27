@@ -89,7 +89,7 @@ def fsk_modulate(bits):
     t = np.linspace(0, TEMPO_BIT, AMOSTRAS_POR_BIT)
     
     for i in bits:
-        if i == 0:
+        if i == 1:
             sinal_bit = 1.0 * np.sin(2*np.pi*(FREEQUENCIA_PORTADORA + frequencia_desvio) * t)    
         else:
             sinal_bit = 1.0 * np.sin(2*np.pi*(FREEQUENCIA_PORTADORA - frequencia_desvio) * t)
